@@ -5,8 +5,10 @@ import cv2
 import sys
 import random
 import numpy as np
+import matplotlib
 from matplotlib import pyplot as plt
 from matplotlib import widgets
+from matplotlib.collections import LineCollection
 
 # configurable params
 search_size = 20
@@ -40,16 +42,50 @@ def main(argv):
     positions[:, 0] = np.arange(0, (nfrm / framerate), 1 / framerate)  # time in seconds since video start
     xmax = roi[0] + roi[2]
     ymax = roi[1] + roi[3]
-    for frm in range(0, nfrm):
-        print('.', end='')
+    for frm in range(0, nfrm - 1):
+        if frm % 100 == 0:
+            print('\n')
+            print(frm, end='', flush=True)
         status, frame = video.read(frm)
-        fg = frame[roi[1]:ymax, roi[0]:xmax].mean(axis=2)
-        fg = (256 * fg) / (bg + 1)
-        positions[frm, 1:2] = findfly(fg, threshold, search_size, True)
+        if not status:
+            print('x', end='', flush=True)
+            positions[frm, 1:] = [np.nan, np.nan]
+        else:
+            print('.', end='', flush=True)
+            fg = frame[roi[1]:ymax, roi[0]:xmax].mean(axis=2)
+            fg = (256 * fg) / (bg + 1)
+            positions[frm, 1:] = findfly(fg, threshold, search_size, True)
     print('done!')
-
     video.release()
 
+    print('Creating output')
+    # convert coordinates to real world measurements
+    positions[:,1] = positions[:, 1] * (arena_size / roi[2])
+    positions[:,2] = positions[:, 2] * (arena_size / roi[3])
+
+    writeCSV(positions, 'positions.csv')
+
+    plt.figure('Pathing map')
+    #cmap = plt.get_cmap('viridis')
+    #colors = cmap(positions[:, 0] / positions[:, 0].max())
+    #plt.plot(positions[:, 1], positions[:, 2], c=colors, linewidth=2.)
+    lines = matplotlib.collections.LineCollection(positions[:, 1:], linewidths=2, cmap=plt.get_cmap('viridis'),
+                                                  norm=plt.Normalize(0, positions[:, 0].max()))
+    plt.gca().add_collection(lines)
+    plt.gca().invert_yaxis()
+    plt.axis('equal')
+    plt.show()
+
+
+def writeCSV(array, path):
+    width = len(array[0, :])
+    with open(path, 'w') as file:
+        for row in range(0, array.shape[0]):
+            for cell in range(0, width):
+                file.write(str(array[row, cell]))
+                if cell != width - 1:
+                    file.write(',')
+            file.write('\n')
 
 def findfly(image, threshold, size, invert):
     # Locate darkest pixel.
@@ -78,20 +114,18 @@ def findfly(image, threshold, size, invert):
 
     # "Flip" image to be white pixels on black.
     if invert:
-        area = 255 - area
+        area = area.max() - area
 
     total = area.sum()
     if total < threshold:
         # do not return a valid position, likely an artifact
         return [np.nan, np.nan]
     else:
-        x2 = np.arange(0, len(area[0, :]), 1)
-        y2 = np.arange(0, len(area[:, 0]), 1)
-        x = (area * x2).sum(axis=0) / total + leftEdge
-        y = (area * y2).sum(axis=1) / total + topEdge
+        xweight = np.arange(0, len(area[0, :]), 1)
+        yweight = np.arange(0, len(area[:, 0]), 1)
+        x = (area * xweight).sum() / total + leftEdge
+        y = (area.transpose() * yweight).sum() / total + topEdge
         return [x, y]
-
-
 
 
 def imrect(image):
@@ -135,7 +169,7 @@ def generate_background(vreader, bounds, depth):
     randv = [random.randint(0, vreader.get(cv2.CAP_PROP_FRAME_COUNT - 1)) for i in range(0, depth)]
     bg_array = np.zeros((bounds[3], bounds[2], depth), dtype='uint8')
     for frame in range(0, 100):
-        print('.', end='')
+        print('.', end='', flush=True)
         status, img = vreader.read(randv[frame])
         plt.show()
         bg_array[:, :, frame] = img[bounds[1]:bounds[1] + bounds[3], bounds[0]:bounds[0] + bounds[2], :].mean(axis=2)
