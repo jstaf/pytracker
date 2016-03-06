@@ -21,20 +21,77 @@ def main(argv):
     video = cv2.VideoCapture(path)
     if not video.isOpened():
         sys.exit('Could not open: ' + path)
-    resolution = (video.get(cv2.CAP_PROP_FRAME_WIDTH), video.get(cv2.CAP_PROP_FRAME_HEIGHT))
     framerate = video.get(cv2.CAP_PROP_FPS)
-    nfrm = int(video.get(cv2.CAP_PROP_FRAME_COUNT) - 1)
+    nfrm = int(video.get(cv2.CAP_PROP_FRAME_COUNT))
 
-    # grab region of interest
+    # preprocessing
     ret, frame = video.read()
     roi = imrect(frame)
-
     bg = generate_background(video, roi, 100)
-    plt.imshow(bg, interpolation='nearest', cmap='magma')
-    plt.colorbar()
-    plt.show()
+
+    # analysis
+    print('Calculating fly positions', end='')
+    global search_size
+    threshold = search_size ** 2 * per_pixel_threshold
+    search_size = round(search_size / 2)
+
+    # extract positions from video
+    positions = np.zeros((nfrm, 3))
+    positions[:, 0] = np.arange(0, (nfrm / framerate), 1 / framerate)  # time in seconds since video start
+    xmax = roi[0] + roi[2]
+    ymax = roi[1] + roi[3]
+    for frm in range(0, nfrm):
+        print('.', end='')
+        status, frame = video.read(frm)
+        fg = frame[roi[1]:ymax, roi[0]:xmax].mean(axis=2)
+        fg = (256 * fg) / (bg + 1)
+        positions[frm, 1:2] = findfly(fg, threshold, search_size, True)
+    print('done!')
 
     video.release()
+
+
+def findfly(image, threshold, size, invert):
+    # Locate darkest pixel.
+    if invert:
+        val = image[:].min()
+    else:
+        val = image[:].max()
+    ypos, xpos = np.nonzero(image == val)
+    xpos = xpos.mean()
+    ypos = ypos.mean()
+
+    # crop to search area size
+    leftEdge = int(xpos - size)
+    rightEdge = int(xpos + size)
+    topEdge = int(ypos - size)
+    bottomEdge = int(ypos + size)
+    if leftEdge < 0:
+        leftEdge = 0
+    if rightEdge > len(image[0, :]):
+        rightEdge = len(image[0, :]) - 1
+    if topEdge < 0:
+        topEdge = 0
+    if bottomEdge > len(image[:, 0]):
+        bottomEdge = len(image[:, 0]) - 1
+    area = image[topEdge:bottomEdge, leftEdge:rightEdge]
+
+    # "Flip" image to be white pixels on black.
+    if invert:
+        area = 255 - area
+
+    total = area.sum()
+    if total < threshold:
+        # do not return a valid position, likely an artifact
+        return [np.nan, np.nan]
+    else:
+        x2 = np.arange(0, len(area[0, :]), 1)
+        y2 = np.arange(0, len(area[:, 0]), 1)
+        x = (area * x2).sum(axis=0) / total + leftEdge
+        y = (area * y2).sum(axis=1) / total + topEdge
+        return [x, y]
+
+
 
 
 def imrect(image):
