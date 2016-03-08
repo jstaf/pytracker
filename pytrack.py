@@ -63,8 +63,8 @@ def main(argv):
     positions[:, 1] = positions[:, 1] * (arena_size / roi[2])
     positions[:, 2] = positions[:, 2] * (arena_size / roi[3])
     # clean data
-    positions = dist_filter(positions, 2)
-    positions = interpolate(positions, 2)
+    positions = dist_filter(positions, 1.5)
+    positions = interpolate(positions, 1.5)
     np.savetxt('positions.csv', positions, fmt='%10.5f', delimiter=',')
     plot_positions(positions, arena_size)
 
@@ -101,7 +101,6 @@ def interpolate(array, distance):
                 diff = nidx - idx
 
                 # make sure values aren't too far apart, then interpolate
-                print(dist.euclidean(lpoint, npoint))
                 if dist.euclidean(lpoint, npoint) <= distance:
                     for badidx in range(1, diff):
                         array[lidx + badidx, dim:(dim + 2)] = lpoint + ((npoint - lpoint) * badidx / (diff + 1))
@@ -274,12 +273,12 @@ def generate_background(vreader, bounds, depth):
     print('done!')
     return bg_array.mean(axis=2)
 
-if __name__=='__main__':
-    # main(sys.argv)
+if __name__ == '__main__':
+    main(sys.argv)
 
-    testd = 1
-    positions = np.loadtxt('positions.csv', delimiter=',')
-    positions = dist_filter(positions, testd)
-    positions = interpolate(positions, 5)
-    np.savetxt('positions_new.csv', positions, fmt='%10.5f', delimiter=',')
-    plot_positions(positions, arena_size)
+    # testd = 1
+    # positions = np.loadtxt('positions.csv', delimiter=',')
+    # positions = dist_filter(positions, testd)
+    # positions = interpolate(positions, 5)
+    # np.savetxt('positions_new.csv', positions, fmt='%10.5f', delimiter=',')
+    # plot_positions(positions, arena_size)
