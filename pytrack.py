@@ -68,11 +68,50 @@ def main(argv):
     np.savetxt('positions.csv', positions, fmt='%10.5f', delimiter=',')
     plot_positions(positions, arena_size)
 
-def interpolate(array, dist):
-    pass
+
+def interpolate(array, distance):
+    """
+    Linearly interpolate missing values between points as long as the subject does not move beyond a certain distance.
+
+    :param array: A numpy array of positions
+    :param distance: Distance beyond which interpolation is not performed
+    :return: The "corrected" array
+    """
+
+    inum = 0
+    for dim in range(1, array.shape[1], 2):
+        npoint = 0
+        while npoint < array.size - 1:
+            point = array[npoint, dim]
+            # if an nan is encountered, find the last and next point that was not an nan
+            if np.isnan(point) and npoint != 1:
+                lidx = npoint - 1
+                lpoint = array[lidx, dim:(dim + 2)]
+                nidx = not np.isnan(array[npoint:, dim]) + npoint - 1
+                if np.isnan(nidx):
+                    break
+                npoint = array[nidx, dim:(dim + 2)]
+                diff = nidx - npoint
+
+                # make sure values aren't too far apart, then interpolate
+                if dist.euclidean(lpoint, npoint) <= distance:
+                    for badidx in range(1, diff):
+                        array[lidx + badidx, dim:(dim + 2)] = lpoint + ((npoint - lpoint) * badidx / (diff + 1))
+                    inum += diff
+
+                # skip to next non-nan value
+                npoint = nidx
+    return array
 
 
 def dist_filter(array, distance):
+    """
+    Iterate through array and remove spurious tracks
+
+    :param array: A numpy array of positions (same format as the plotting function)
+    :param distance: Movement greater than this distance is removed
+    :return: The filtered array
+    """
     navg = 5
     nfilt = 0
     for dim in range(1, array.shape[1], 2):
@@ -224,6 +263,8 @@ def generate_background(vreader, bounds, depth):
 if __name__=='__main__':
     # main(sys.argv)
 
+    testd = 1
     positions = np.loadtxt('positions.csv', delimiter=',')
-    positions = dist_filter(positions, 1)
+    positions = dist_filter(positions, testd)
+    positions = interpolate(positions, testd)
     plot_positions(positions, arena_size)
