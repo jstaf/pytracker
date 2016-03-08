@@ -69,6 +69,13 @@ def main(argv):
     plot_positions(positions, arena_size)
 
 
+def next_non_nan(a1):
+    for idx, num in enumerate(a1):
+        if not np.isnan(num):
+            return idx
+    return np.nan
+
+
 def interpolate(array, distance):
     """
     Linearly interpolate missing values between points as long as the subject does not move beyond a certain distance.
@@ -80,27 +87,34 @@ def interpolate(array, distance):
 
     inum = 0
     for dim in range(1, array.shape[1], 2):
-        npoint = 0
-        while npoint < array.size - 1:
-            point = array[npoint, dim]
+        idx = 0
+        while idx < array.shape[0] - 1:
+            point = array[idx, dim]
             # if an nan is encountered, find the last and next point that was not an nan
-            if np.isnan(point) and npoint != 1:
-                lidx = npoint - 1
+            if np.isnan(point) and idx != 0:
+                lidx = idx - 1
                 lpoint = array[lidx, dim:(dim + 2)]
-                nidx = not np.isnan(array[npoint:, dim]) + npoint - 1
+                nidx = next_non_nan(array[idx:, dim]) + idx
                 if np.isnan(nidx):
                     break
                 npoint = array[nidx, dim:(dim + 2)]
-                diff = nidx - npoint
+                diff = nidx - idx
 
                 # make sure values aren't too far apart, then interpolate
+                print(dist.euclidean(lpoint, npoint))
                 if dist.euclidean(lpoint, npoint) <= distance:
                     for badidx in range(1, diff):
                         array[lidx + badidx, dim:(dim + 2)] = lpoint + ((npoint - lpoint) * badidx / (diff + 1))
                     inum += diff
-
                 # skip to next non-nan value
-                npoint = nidx
+                idx = nidx
+            elif np.isnan(point) and idx == 0:
+                # first point is nan, jump to next
+                idx = next_non_nan(array[:, 1])
+            else:
+                # no nan's found
+                idx += 1
+    print(inum, 'points recovered through interpolation.')
     return array
 
 
@@ -266,5 +280,6 @@ if __name__=='__main__':
     testd = 1
     positions = np.loadtxt('positions.csv', delimiter=',')
     positions = dist_filter(positions, testd)
-    positions = interpolate(positions, testd)
+    positions = interpolate(positions, 5)
+    np.savetxt('positions_new.csv', positions, fmt='%10.5f', delimiter=',')
     plot_positions(positions, arena_size)
