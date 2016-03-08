@@ -83,18 +83,30 @@ def dist_filter(array, distance):
             else:
                 # Compute mean positions for last and next num_avg frames
                 last_set = array[(npoint - navg):npoint, dim:(dim + 2)]
-                last_set = np.array(last_set for i in np.isnan(last_set))
+                last_set = last_set[np.invert(np.isnan(last_set[:, 0])), :]  # wow, numpy is awkward to use
                 last_mean = last_set.mean(axis=0)
+                next_set = array[(npoint + 1):(npoint + 6), dim:(dim + 2)]
+                next_set = next_set[np.invert(np.isnan(next_set[:, 0])), :]  # wow, numpy is awkward to use
+                next_mean = next_set.mean(axis=0)
 
                 # If the tracks move more than the threshold, erase it
-                if dist.euclidean(point, last_mean) > distance:
-                    array[npoint, dim:(dim+1)] = np.nan
+                if (not np.isnan(last_mean[0]) and dist.euclidean(point, last_mean) > distance) or \
+                        (not np.isnan(next_mean[0]) and dist.euclidean(point, next_mean) > distance):
+                    array[npoint, dim:(dim + 2)] = np.nan
                     nfilt += 1
 
     print(nfilt, ' false tracks removed from the dataset.')
     return array
 
+
 def plot_positions(dat, size):
+    """
+    Self explanatory, plots fly position.
+
+    :param dat: An Nx3 array of positions where [time, xpos, ypos]
+    :param size: Arena size
+    :return:
+    """
     points = dat[:, 1:].reshape((-1, 1, 2))
     segments = np.concatenate([points[:-1], points[1:]], axis=1)
     lc = LineCollection(segments, cmap=plt.get_cmap('viridis'), norm=plt.Normalize(0, max(dat[:, 0])))
@@ -111,6 +123,16 @@ def plot_positions(dat, size):
 
 
 def findfly(image, threshold, size, invert):
+    """
+    Locate a fly by finding the lightest (default)/darkest pixel, extracting the area around that pixel, then finding
+    its centroid.
+
+    :param image: A numpy array
+    :param threshold: A per-pixel threshold
+    :param size: Size of area in which to calculate the centroid
+    :param invert: Whether to invert the region to find dark on light objects.
+    :return: [x, y] coordinate of fly
+    """
     # Locate darkest pixel.
     if invert:
         val = image[:].min()
@@ -203,5 +225,5 @@ if __name__=='__main__':
     # main(sys.argv)
 
     positions = np.loadtxt('positions.csv', delimiter=',')
-    positions = dist_filter(positions, 2)
+    positions = dist_filter(positions, 1)
     plot_positions(positions, arena_size)
