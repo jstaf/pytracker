@@ -5,10 +5,10 @@ import cv2
 import sys
 import random
 import numpy as np
-import matplotlib
 from matplotlib import pyplot as plt
 from matplotlib import widgets
 from matplotlib.collections import LineCollection
+import scipy.spatial.distance as dist
 
 # configurable params
 search_size = 20
@@ -60,32 +60,55 @@ def main(argv):
 
     print('Creating output')
     # convert coordinates to real world measurements
-    positions[:,1] = positions[:, 1] * (arena_size / roi[2])
-    positions[:,2] = positions[:, 2] * (arena_size / roi[3])
+    positions[:, 1] = positions[:, 1] * (arena_size / roi[2])
+    positions[:, 2] = positions[:, 2] * (arena_size / roi[3])
+    # clean data
+    positions = dist_filter(positions, 2)
+    positions = interpolate(positions, 2)
+    np.savetxt('positions.csv', positions, fmt='%10.5f', delimiter=',')
+    plot_positions(positions, arena_size)
 
-    writeCSV(positions, 'positions.csv')
+def interpolate(array, dist):
+    pass
+
+
+def dist_filter(array, distance):
+    navg = 5
+    nfilt = 0
+    for dim in range(1, array.shape[1], 2):
+        for npoint in range(navg, array.shape[0] - navg):
+            point = array[npoint, dim:(dim + 2)]
+            if np.isnan(point[0]):
+                continue
+            else:
+                # Compute mean positions for last and next num_avg frames
+                last_set = array[(npoint - navg):npoint, dim:(dim + 2)]
+                last_set = np.array(last_set for i in np.isnan(last_set))
+                last_mean = last_set.mean(axis=0)
+
+                # If the tracks move more than the threshold, erase it
+                if dist.euclidean(point, last_mean) > distance:
+                    array[npoint, dim:(dim+1)] = np.nan
+                    nfilt += 1
+
+    print(nfilt, ' false tracks removed from the dataset.')
+    return array
+
+def plot_positions(dat, size):
+    points = dat[:, 1:].reshape((-1, 1, 2))
+    segments = np.concatenate([points[:-1], points[1:]], axis=1)
+    lc = LineCollection(segments, cmap=plt.get_cmap('viridis'), norm=plt.Normalize(0, max(dat[:, 0])))
+    lc.set_array(dat[:, 0])
+    lc.set_linewidth(2)
 
     plt.figure('Pathing map')
-    #cmap = plt.get_cmap('viridis')
-    #colors = cmap(positions[:, 0] / positions[:, 0].max())
-    #plt.plot(positions[:, 1], positions[:, 2], c=colors, linewidth=2.)
-    lines = matplotlib.collections.LineCollection(positions[:, 1:], linewidths=2, cmap=plt.get_cmap('viridis'),
-                                                  norm=plt.Normalize(0, positions[:, 0].max()))
-    plt.gca().add_collection(lines)
+    plt.gca().add_collection(lc)
+    plt.xlim(0, size)
+    plt.ylim(0, size)
     plt.gca().invert_yaxis()
     plt.axis('equal')
     plt.show()
 
-
-def writeCSV(array, path):
-    width = len(array[0, :])
-    with open(path, 'w') as file:
-        for row in range(0, array.shape[0]):
-            for cell in range(0, width):
-                file.write(str(array[row, cell]))
-                if cell != width - 1:
-                    file.write(',')
-            file.write('\n')
 
 def findfly(image, threshold, size, invert):
     # Locate darkest pixel.
@@ -98,19 +121,19 @@ def findfly(image, threshold, size, invert):
     ypos = ypos.mean()
 
     # crop to search area size
-    leftEdge = int(xpos - size)
-    rightEdge = int(xpos + size)
-    topEdge = int(ypos - size)
-    bottomEdge = int(ypos + size)
-    if leftEdge < 0:
-        leftEdge = 0
-    if rightEdge > len(image[0, :]):
-        rightEdge = len(image[0, :]) - 1
-    if topEdge < 0:
-        topEdge = 0
-    if bottomEdge > len(image[:, 0]):
-        bottomEdge = len(image[:, 0]) - 1
-    area = image[topEdge:bottomEdge, leftEdge:rightEdge]
+    left_edge = int(xpos - size)
+    right_edge = int(xpos + size)
+    top_edge = int(ypos - size)
+    bottom_edge = int(ypos + size)
+    if left_edge < 0:
+        left_edge = 0
+    if right_edge > len(image[0, :]):
+        right_edge = len(image[0, :]) - 1
+    if top_edge < 0:
+        top_edge = 0
+    if bottom_edge > len(image[:, 0]):
+        bottom_edge = len(image[:, 0]) - 1
+    area = image[top_edge:bottom_edge, left_edge:right_edge]
 
     # "Flip" image to be white pixels on black.
     if invert:
@@ -123,8 +146,8 @@ def findfly(image, threshold, size, invert):
     else:
         xweight = np.arange(0, len(area[0, :]), 1)
         yweight = np.arange(0, len(area[:, 0]), 1)
-        x = (area * xweight).sum() / total + leftEdge
-        y = (area.transpose() * yweight).sum() / total + topEdge
+        x = (area * xweight).sum() / total + left_edge
+        y = (area.transpose() * yweight).sum() / total + top_edge
         return [x, y]
 
 
@@ -177,4 +200,8 @@ def generate_background(vreader, bounds, depth):
     return bg_array.mean(axis=2)
 
 if __name__=='__main__':
-    main(sys.argv)
+    # main(sys.argv)
+
+    positions = np.loadtxt('positions.csv', delimiter=',')
+    positions = dist_filter(positions, 2)
+    plot_positions(positions, arena_size)
